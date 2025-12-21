@@ -1,0 +1,485 @@
+// ========================================
+// OLIVIA MERINO - E-COMMERCE FUNCTIONALITY
+// ========================================
+
+// State Management
+let products = [];
+let cart = JSON.parse(localStorage.getItem('oliviaCart')) || [];
+let filteredProducts = [];
+
+// DOM Elements
+const productsGrid = document.getElementById('productsGrid');
+const cartModal = document.getElementById('cartModal');
+const cartBtn = document.getElementById('cartBtn');
+const closeCart = document.getElementById('closeCart');
+const cartItems = document.getElementById('cartItems');
+const cartCount = document.getElementById('cartCount');
+const totalAmount = document.getElementById('totalAmount');
+const searchInput = document.getElementById('searchInput');
+const categoryFilter = document.getElementById('categoryFilter');
+const typeFilter = document.getElementById('typeFilter');
+const priceFilter = document.getElementById('priceFilter');
+const clearFilters = document.getElementById('clearFilters');
+const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+
+// ========================================
+// INITIALIZATION
+// ========================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadProducts();
+    updateCartUI();
+    setupEventListeners();
+});
+
+// ========================================
+// LOAD PRODUCTS
+// ========================================
+
+async function loadProducts() {
+    try {
+        const response = await fetch('data/products.json');
+        products = await response.json();
+        filteredProducts = products.products;
+        displayProducts(filteredProducts);
+    } catch (error) {
+        console.error('Error loading products:', error);
+        productsGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-light);">Error al cargar los productos. Por favor, recarga la página.</p>';
+    }
+}
+
+// ========================================
+// DISPLAY PRODUCTS
+// ========================================
+
+function displayProducts(productsToShow) {
+    if (productsToShow.length === 0) {
+        productsGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-light); padding: 3rem;">No se encontraron productos con los filtros seleccionados.</p>';
+        return;
+    }
+
+    productsGrid.innerHTML = productsToShow.map(product => `
+        <div class="product-card" data-id="${product.id}">
+            <div class="product-image">
+                <i class="fas fa-shoe-prints"></i>
+                ${product.new ? '<span class="product-badge">NUEVO</span>' : ''}
+            </div>
+            <div class="product-info">
+                <span class="product-category">${product.category} - ${product.type}</span>
+                <h3 class="product-name">${product.name}</h3>
+                <p class="product-price">€${product.price.toFixed(2)}</p>
+                <div class="product-sizes">
+                    ${product.sizes.slice(0, 5).map(size => `<span class="size-option">${size}</span>`).join('')}
+                    ${product.sizes.length > 5 ? '<span class="size-option">...</span>' : ''}
+                </div>
+                <button class="add-to-cart-btn" onclick="addToCart(${product.id})">
+                    <i class="fas fa-shopping-cart"></i> Añadir al Carrito
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ========================================
+// FILTER FUNCTIONS
+// ========================================
+
+function applyFilters() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const category = categoryFilter.value;
+    const type = typeFilter.value;
+    const priceRange = priceFilter.value;
+
+    filteredProducts = products.products.filter(product => {
+        // Search filter
+        const matchesSearch = product.name.toLowerCase().includes(searchTerm) ||
+                            product.description.toLowerCase().includes(searchTerm) ||
+                            product.category.toLowerCase().includes(searchTerm);
+
+        // Category filter
+        const matchesCategory = category === 'all' || product.category === category;
+
+        // Type filter
+        const matchesType = type === 'all' || product.type === type;
+
+        // Price filter
+        let matchesPrice = true;
+        if (priceRange !== 'all') {
+            if (priceRange === '0-50') {
+                matchesPrice = product.price <= 50;
+            } else if (priceRange === '50-100') {
+                matchesPrice = product.price > 50 && product.price <= 100;
+            } else if (priceRange === '100-150') {
+                matchesPrice = product.price > 100 && product.price <= 150;
+            } else if (priceRange === '150+') {
+                matchesPrice = product.price > 150;
+            }
+        }
+
+        return matchesSearch && matchesCategory && matchesType && matchesPrice;
+    });
+
+    displayProducts(filteredProducts);
+}
+
+function resetFilters() {
+    searchInput.value = '';
+    categoryFilter.value = 'all';
+    typeFilter.value = 'all';
+    priceFilter.value = 'all';
+    filteredProducts = products.products;
+    displayProducts(filteredProducts);
+}
+
+// ========================================
+// CART FUNCTIONS
+// ========================================
+
+function addToCart(productId) {
+    const product = products.products.find(p => p.id === productId);
+    
+    if (!product) return;
+
+    const existingItem = cart.find(item => item.id === productId);
+
+    if (existingItem) {
+        existingItem.quantity += 1;
+    } else {
+        cart.push({
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            quantity: 1,
+            size: product.sizes[0] // Default to first size
+        });
+    }
+
+    saveCart();
+    updateCartUI();
+    showNotification(`${product.name} añadido al carrito`);
+}
+
+function removeFromCart(productId) {
+    cart = cart.filter(item => item.id !== productId);
+    saveCart();
+    updateCartUI();
+}
+
+function updateQuantity(productId, change) {
+    const item = cart.find(item => item.id === productId);
+    
+    if (item) {
+        item.quantity += change;
+        
+        if (item.quantity <= 0) {
+            removeFromCart(productId);
+        } else {
+            saveCart();
+            updateCartUI();
+        }
+    }
+}
+
+function saveCart() {
+    localStorage.setItem('oliviaCart', JSON.stringify(cart));
+}
+
+function updateCartUI() {
+    // Update cart count
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    cartCount.textContent = totalItems;
+
+    // Update cart items display
+    if (cart.length === 0) {
+        cartItems.innerHTML = '<div class="cart-empty"><i class="fas fa-shopping-cart" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i><p>Tu carrito está vacío</p></div>';
+        totalAmount.textContent = '€0.00';
+        return;
+    }
+
+    cartItems.innerHTML = cart.map(item => `
+        <div class="cart-item">
+            <div class="cart-item-image">
+                <i class="fas fa-shoe-prints"></i>
+            </div>
+            <div class="cart-item-details">
+                <div class="cart-item-name">${item.name}</div>
+                <div class="cart-item-price">€${item.price.toFixed(2)}</div>
+                <div class="cart-item-quantity">
+                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, -1)">-</button>
+                    <span>${item.quantity}</span>
+                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, 1)">+</button>
+                    <span style="margin-left: 0.5rem; color: var(--text-light);">Talla: ${item.size}</span>
+                </div>
+            </div>
+            <button class="remove-item-btn" onclick="removeFromCart(${item.id})">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `).join('');
+
+    // Update total
+    const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    totalAmount.textContent = `€${total.toFixed(2)}`;
+}
+
+function openCart() {
+    cartModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCartModal() {
+    cartModal.classList.remove('active');
+    document.body.style.overflow = 'auto';
+}
+
+// ========================================
+// EVENT LISTENERS
+// ========================================
+
+function setupEventListeners() {
+    // Cart modal
+    cartBtn.addEventListener('click', openCart);
+    closeCart.addEventListener('click', closeCartModal);
+    
+    cartModal.addEventListener('click', (e) => {
+        if (e.target === cartModal) {
+            closeCartModal();
+        }
+    });
+
+    // Filters
+    searchInput.addEventListener('input', debounce(applyFilters, 300));
+    categoryFilter.addEventListener('change', applyFilters);
+    typeFilter.addEventListener('change', applyFilters);
+    priceFilter.addEventListener('change', applyFilters);
+    clearFilters.addEventListener('click', resetFilters);
+
+    // Category cards and scroll slides
+    document.querySelectorAll('.category-card, .editorial-panel, .scroll-card, .scroll-slide').forEach(card => {
+        card.addEventListener('click', (e) => {
+            if (!card.getAttribute('href') || card.getAttribute('href') === '#products') {
+                e.preventDefault();
+                const category = card.dataset.category;
+                const type = card.dataset.type;
+                
+                if (type) {
+                    typeFilter.value = type;
+                    categoryFilter.value = 'all';
+                } else if (category) {
+                    categoryFilter.value = category;
+                    typeFilter.value = 'all';
+                }
+                
+                applyFilters();
+                
+                // Smooth scroll to products
+                document.getElementById('products').scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+
+    // Mobile menu (basic implementation)
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', () => {
+            const nav = document.querySelector('.nav');
+            nav.style.display = nav.style.display === 'block' ? 'none' : 'block';
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // ESC to close modal
+        if (e.key === 'Escape' && cartModal.classList.contains('active')) {
+            closeCartModal();
+        }
+    });
+}
+
+// ========================================
+// UTILITY FUNCTIONS
+// ========================================
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function showNotification(message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 100px;
+        right: 20px;
+        background: var(--secondary-color);
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: var(--shadow-hover);
+        z-index: 3000;
+        animation: slideInRight 0.3s ease;
+    `;
+    notification.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+    
+    document.body.appendChild(notification);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOutRight 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// Add animations for notifications
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideInRight {
+        from {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOutRight {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// ========================================
+// SMOOTH SCROLLING FOR NAVIGATION LINKS
+// ========================================
+
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            target.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }
+    });
+});
+
+// ========================================
+// SCROLL ANIMATIONS - REFINED
+// ========================================
+
+const observerOptions = {
+    threshold: 0.15,
+    rootMargin: '0px 0px -80px 0px'
+};
+
+const fadeObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            entry.target.style.opacity = '0';
+            entry.target.style.animation = 'fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards';
+            fadeObserver.unobserve(entry.target);
+        }
+    });
+}, observerOptions);
+
+// Observe elements when they're available
+setTimeout(() => {
+    document.querySelectorAll('.product-card, .category-card, .feature-card, .value-item').forEach(el => {
+        fadeObserver.observe(el);
+    });
+}, 300);
+
+// ========================================
+// NAVBAR - OVERLAY TO STICKY TRANSITION
+// Premium smooth scrolling behavior
+// ========================================
+
+const header = document.getElementById('mainHeader');
+const heroSection = document.querySelector('.hero');
+
+/**
+ * Maneja la transición del navbar de overlay transparente a sticky
+ * - Estado inicial: Transparente con logo grande sobre el hero
+ * - Estado scrolled: Fijo con fondo semiopaco, logo pequeño
+ */
+function handleNavbarScroll() {
+    const scrollPosition = window.pageYOffset;
+    const triggerPoint = 100; // Punto donde inicia la transición
+    
+    if (scrollPosition > triggerPoint) {
+        // Activar estado sticky
+        header.classList.add('scrolled');
+    } else {
+        // Mantener estado overlay
+        header.classList.remove('scrolled');
+    }
+}
+
+// Escuchar evento de scroll con optimización
+let ticking = false;
+window.addEventListener('scroll', () => {
+    if (!ticking) {
+        window.requestAnimationFrame(() => {
+            handleNavbarScroll();
+            ticking = false;
+        });
+        ticking = true;
+    }
+});
+
+// Ejecutar al cargar la página
+window.addEventListener('load', handleNavbarScroll);
+
+// ========================================
+// PARALLAX EFFECT FOR HERO
+// ========================================
+
+window.addEventListener('scroll', () => {
+    const hero = document.querySelector('.hero-image');
+    if (hero) {
+        const scrolled = window.pageYOffset;
+        const rate = scrolled * 0.5;
+        hero.style.transform = `translateY(${rate}px)`;
+    }
+});
+
+// ========================================
+// LAZY LOADING FOR IMAGES (when added)
+// ========================================
+
+if ('IntersectionObserver' in window) {
+    const imageObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                if (img.dataset.src) {
+                    img.src = img.dataset.src;
+                    img.classList.add('loaded');
+                    observer.unobserve(img);
+                }
+            }
+        });
+    });
+
+    document.querySelectorAll('img[data-src]').forEach(img => {
+        imageObserver.observe(img);
+    });
+}
